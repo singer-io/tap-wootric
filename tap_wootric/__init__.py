@@ -120,6 +120,10 @@ def main():
     if args.state:
         STATE.update(utils.load_json(args.state))
 
+    for k, v in STATE.items():
+        if isinstance(v, int):
+            STATE[k] = utils.strptime(v)
+
     do_sync()
 
 
