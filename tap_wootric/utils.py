@@ -10,7 +10,7 @@ DATETIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
 def strptime(dt):
     if isinstance(dt, int) or dt.isnumeric():
-        return datetime.datetime.utcfromtimestamp(dt)
+        return datetime.datetime.utcfromtimestamp(int(dt))
     else:
         return datetime.datetime.strptime(dt, DATETIME_FMT)
 
