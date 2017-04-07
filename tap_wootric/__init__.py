@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
 import datetime
+import os
 import sys
 
 import requests
 import singer
 
-from tap_wootric import utils
+from singer import utils
 
 
 BASE_URL = "https://api.wootric.com/v1/"
@@ -19,6 +20,11 @@ STATE = {}
 logger = singer.get_logger()
 session = requests.Session()
 
+def get_abs_path(path):
+    return os.path.join(os.path.dirname(os.path.realpath(__file__)), path)
+
+def load_schema(entity):
+    return utils.load_json(get_abs_path("schemas/{}.json".format(entity)))
 
 def get_start(key):
     if key not in STATE:
@@ -88,7 +94,7 @@ def transform_datetimes(row):
 def sync_entity(entity):
     logger.info("Syncing {} from {}".format(entity, get_start(entity)))
 
-    schema = utils.load_schema(entity)
+    schema = load_schema(entity)
     singer.write_schema(entity, schema, ["id"])
 
     for i, row in enumerate(gen_request(entity)):
@@ -113,14 +119,11 @@ def do_sync():
 
 
 def main():
-    args = utils.parse_args()
-
-    config = utils.load_json(args.config)
-    utils.check_config(config, ["client_id", "client_secret", "start_date"])
-    CONFIG.update(config)
+    args = utils.parse_args(["client_id", "client_secret", "start_date"])
+    CONFIG.update(args.config)
 
     if args.state:
-        STATE.update(utils.load_json(args.state))
+        STATE.update(args.state)
 
     for k, v in STATE.items():
         if isinstance(v, int):
