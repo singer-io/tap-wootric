@@ -38,10 +38,7 @@ def get_start_ts(key):
     return get_ts(get_start(key))
 
 def get_ts(isotime):
-    return int(utils.strptime(isotime).timestamp())   
-
-def get_ts_from_wootric_datestring(datestring):
-    return int(datetime.datetime.strptime(datestring, DATETIME_FMT).timestamp())
+    return int(utils.strptime(isotime).timestamp())
 
 def get_url(endpoint):
     return BASE_URL + endpoint
@@ -89,7 +86,7 @@ def gen_request(endpoint):
             if params["page"] > MAX_RESULT_PAGES:
                 #make a fresh request from our highest observed timestamp so as not to exceed the page count limit
                 params["page"] = 1
-                params["created[gt]"] = get_ts_from_wootric_datestring(row["created_at"])
+                params["created[gt]"] = get_ts(row["created_at"])
         else:
             break
 
