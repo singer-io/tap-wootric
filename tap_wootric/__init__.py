@@ -13,6 +13,7 @@ from singer import utils
 BASE_URL = "https://api.wootric.com/v1/"
 PER_PAGE = 50
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S %z"
+MAX_RESULT_PAGES = 30 #undocumented limit of results from API
 
 CONFIG = {}
 STATE = {}
@@ -34,8 +35,13 @@ def get_start(key):
 
 
 def get_start_ts(key):
-    return int(utils.strptime(get_start(key)).timestamp())
+    return get_ts(get_start(key))
 
+def get_ts(isotime):
+    return int(utils.strptime(isotime).timestamp())   
+
+def get_ts_from_wootric_datestring(datestring):
+    return int(datetime.datetime.strptime(datestring, DATETIME_FMT).timestamp())
 
 def get_url(endpoint):
     return BASE_URL + endpoint
@@ -53,7 +59,7 @@ def get_access_token():
     CONFIG["access_token"] = data["access_token"]
 
 
-def gen_request(endpoint):
+def gen_request(endpoint, startTs=None):
     url = BASE_URL + endpoint
     params = {
         "per_page": PER_PAGE,
@@ -76,10 +82,15 @@ def gen_request(endpoint):
         data = resp.json()
 
         for row in data:
+            latest_ts = row["created_at"]
             yield row
 
         if len(data) == PER_PAGE:
             params["page"] += 1
+            if params["page"] > MAX_RESULT_PAGES:
+                #make a fresh request from our highest observed timestamp so as not to exceed the page count limit
+                params["page"] = 1
+                params["created[gt]"] = get_ts_from_wootric_datestring(latest_ts)
         else:
             break
 
