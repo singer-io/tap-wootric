@@ -59,7 +59,7 @@ def get_access_token():
     CONFIG["access_token"] = data["access_token"]
 
 
-def gen_request(endpoint, startTs=None):
+def gen_request(endpoint):
     url = BASE_URL + endpoint
     params = {
         "per_page": PER_PAGE,
@@ -82,7 +82,6 @@ def gen_request(endpoint, startTs=None):
         data = resp.json()
 
         for row in data:
-            latest_ts = row["created_at"]
             yield row
 
         if len(data) == PER_PAGE:
@@ -90,7 +89,7 @@ def gen_request(endpoint, startTs=None):
             if params["page"] > MAX_RESULT_PAGES:
                 #make a fresh request from our highest observed timestamp so as not to exceed the page count limit
                 params["page"] = 1
-                params["created[gt]"] = get_ts_from_wootric_datestring(latest_ts)
+                params["created[gt]"] = get_ts_from_wootric_datestring(row["created_at"])
         else:
             break
 
