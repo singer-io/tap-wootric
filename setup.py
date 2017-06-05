@@ -3,7 +3,7 @@
 from setuptools import setup
 
 setup(name='tap-wootric',
-      version='0.2.6',
+      version='0.3.0',
       description='Singer.io tap for extracting data from the Wootric API',
       author='Stitch',
       url='http://singer.io',
@@ -12,6 +12,7 @@ setup(name='tap-wootric',
       install_requires=[
           'singer-python==1.2.0',
           'requests==2.12.4',
+          'backoff==1.3.2'
       ],
       entry_points='''
           [console_scripts]

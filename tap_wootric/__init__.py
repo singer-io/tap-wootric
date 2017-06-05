@@ -4,6 +4,7 @@ import datetime
 import os
 import sys
 
+import backoff
 import requests
 import singer
 
@@ -53,6 +54,23 @@ def get_access_token():
     CONFIG["access_token"] = data["access_token"]
 
 
+@backoff.on_exception(backoff.expo,
+                      (requests.exceptions.RequestException),
+                      max_tries=5,
+                      giveup=lambda e: e.response is not None and 400 <= e.response.status_code < 500,
+                      factor=2)
+def request(url, params):
+    headers = {"Authorization": "Bearer {}".format(CONFIG["access_token"])}
+    if 'user_agent' in CONFIG:
+        headers['User-Agent'] = CONFIG['user_agent']
+
+    req = requests.Request("GET", url, params=params, headers=headers).prepare()
+    logger.info("GET {}".format(req.url))
+    resp = session.send(req)
+    resp.raise_for_status()
+    return resp
+
+
 def gen_request(endpoint):
     url = BASE_URL + endpoint
     params = {
@@ -61,18 +79,9 @@ def gen_request(endpoint):
         "created[gt]": get_start_ts(endpoint),
         "page": 1,
     }
-    headers = {"Authorization": "Bearer {}".format(CONFIG["access_token"])}
-    if 'user_agent' in CONFIG:
-        headers['User-Agent'] = CONFIG['user_agent']
 
     while True:
-        req = requests.Request("GET", url, params=params, headers=headers).prepare()
-        logger.info("GET {}".format(req.url))
-        resp = session.send(req)
-        if resp.status_code >= 400:
-            logger.error("GET {} [{} - {}]".format(req.url, resp.status_code, resp.content))
-            sys.exit(1)
-
+        resp = request(url, params)
         data = resp.json()
 
         for row in data:
