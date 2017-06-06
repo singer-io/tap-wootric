@@ -60,6 +60,7 @@ def get_access_token():
                       giveup=lambda e: e.response is not None and 400 <= e.response.status_code < 500,
                       factor=2)
 def request(url, params):
+    bad_page = "page does not have a valid value"
     headers = {"Authorization": "Bearer {}".format(CONFIG["access_token"])}
     if 'user_agent' in CONFIG:
         headers['User-Agent'] = CONFIG['user_agent']
@@ -67,7 +68,15 @@ def request(url, params):
     req = requests.Request("GET", url, params=params, headers=headers).prepare()
     logger.info("GET {}".format(req.url))
     resp = session.send(req)
-    resp.raise_for_status()
+    if resp.status_code == 400:
+        err = resp.json()
+        if len(err["errors"]) == 1 and err["errors"][0]["message"] == bad_page:
+            # It's possible that the last page had exactly PER_PAGE records
+            return None
+        else:
+            logger.error("GET {}: [{} - {}]".format(req.url, resp.status_code, resp.content))
+            resp.raise_for_status()
+
     return resp
 
 
@@ -82,6 +91,9 @@ def gen_request(endpoint):
 
     while True:
         resp = request(url, params)
+        if not resp:
+            break
+
         data = resp.json()
 
         for row in data:
