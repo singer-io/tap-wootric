@@ -14,6 +14,7 @@ from singer import utils
 BASE_URL = "https://api.wootric.com/v1/"
 PER_PAGE = 50
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S %z"
+MAX_RESULT_PAGES = 30 #undocumented limit of results from API
 
 CONFIG = {}
 STATE = {}
@@ -35,8 +36,10 @@ def get_start(key):
 
 
 def get_start_ts(key):
-    return int(utils.strptime(get_start(key)).timestamp())
+    return get_ts(get_start(key))
 
+def get_ts(isotime):
+    return int(utils.strptime(isotime).timestamp())
 
 def get_url(endpoint):
     return BASE_URL + endpoint
@@ -101,6 +104,10 @@ def gen_request(endpoint):
 
         if len(data) == PER_PAGE:
             params["page"] += 1
+            if params["page"] > MAX_RESULT_PAGES:
+                #make a fresh request from our highest observed timestamp so as not to exceed the page count limit
+                params["page"] = 1
+                params["created[gt]"] = get_ts(row["created_at"])
         else:
             break
 
