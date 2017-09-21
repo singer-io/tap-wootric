@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import datetime
+from datetime import timezone
+
 import os
 import sys
 
@@ -13,6 +15,7 @@ from singer import utils
 
 BASE_URL = "https://api.wootric.com/v1/"
 PER_PAGE = 50
+SLIDING_WINDOW = 86400 # 86400 = 1 day in seconds
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S %z"
 
 CONFIG = {}
@@ -70,24 +73,33 @@ def request(url, params):
     resp = session.send(req)
     if resp.status_code == 400:
         err = resp.json()
-        if len(err["errors"]) == 1 and err["errors"][0]["message"] == bad_page:
-            # It's possible that the last page had exactly PER_PAGE records
-            return None
-        else:
-            logger.error("GET {}: [{} - {}]".format(req.url, resp.status_code, resp.content))
-            resp.raise_for_status()
+        logger.error("GET {}: [{} - {}]".format(req.url, resp.status_code, resp.content))
+        resp.raise_for_status()
 
     return resp
 
+#ENDPOINT_BOOKMARK_KEYS = {"responses": "created_at",
+#                          "declines": "created_at",
+#                          "end_users": "updated_at"}
 
+
+# TODO: this doesn't work for Responses and Declines, we might be able to get them all if we switch the window to
+# shift by created_at for them, and emit based on > updated_at bookmark, with a full request sync every time (without being able to
+# request by updated at, this is the only way it seems)
 def gen_request(endpoint):
     url = BASE_URL + endpoint
     params = {
         "per_page": PER_PAGE,
         "sort_order": "asc",
-        "created[gt]": get_start_ts(endpoint),
+        "updated[gt]": get_start_ts(endpoint),
+        "updated[lt]": get_start_ts(endpoint) + SLIDING_WINDOW,
         "page": 1,
+        "sort_key": "updated_at"
     }
+
+    last_date = params["updated[gt]"]
+    last_round = False
+    sync_start = datetime.datetime.utcnow().timestamp()
 
     while True:
         resp = request(url, params)
@@ -97,13 +109,24 @@ def gen_request(endpoint):
         data = resp.json()
 
         for row in data:
+            last_date = int(datetime.datetime.strptime(row["updated_at"], DATETIME_FMT).astimezone(timezone.utc).timestamp())
             yield row
-
-        if len(data) == PER_PAGE:
-            params["page"] += 1
+            
+        if params["page"] >= 30 and len(data) == PER_PAGE:
+            params["page"] = 1
+            params["updated[gt]"] = last_date
+        elif len(data) == 0:
+            params["page"] = 1
+            params["updated[gt]"] = params["updated[lt]"] - 1 # [lt] and [gt] are not inclusive
+            params["updated[lt]"] = params["updated[gt]"] + SLIDING_WINDOW
         else:
+            params["page"] += 1
+
+        if last_round and len(data) == 0:
             break
 
+        if params["updated[lt]"] > sync_start:
+            last_round = True
 
 def transform_datetimes(row):
     for key in ["created_at", "updated_at", "last_surveyed"]:
