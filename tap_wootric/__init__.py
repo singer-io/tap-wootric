@@ -119,9 +119,13 @@ def gen_request(endpoint):
             if last_updated_at > last_bookmark:
                 yield row
 
-        if params["page"] >= 30 and len(data) == PER_PAGE:
+        if params["page"] >= 30:
             params["page"] = 1
-            params[query_key_gt] = last_date
+            if len(data) == PER_PAGE:
+                params[query_key_gt] = last_date
+            else:
+                params[query_key_gt] = params[query_key_lt] - 1 # [lt] and [gt] are not inclusive
+                params[query_key_lt] = params[query_key_gt] + sliding_window
         elif len(data) == 0:
             params["page"] = 1
             params[query_key_gt] = params[query_key_lt] - 1 # [lt] and [gt] are not inclusive
