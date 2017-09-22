@@ -31,8 +31,8 @@ def load_schema(entity):
     return utils.load_json(get_abs_path("schemas/{}.json".format(entity)))
 
 def get_start(key):
-    if key not in STATE:
-        STATE[key] = CONFIG['start_date']
+    if key not in STATE or key != "end_users":
+        return CONFIG['start_date']
 
     return STATE[key]
 
@@ -40,6 +40,11 @@ def get_start(key):
 def get_start_ts(key):
     return int(utils.strptime(get_start(key)).timestamp())
 
+def get_update_start_ts(key):
+    if key not in STATE:
+        STATE[key] = CONFIG['start_date']
+
+    return int(utils.strptime(STATE[key]).timestamp())
 
 def get_url(endpoint):
     return BASE_URL + endpoint
@@ -63,7 +68,6 @@ def get_access_token():
                       giveup=lambda e: e.response is not None and 400 <= e.response.status_code < 500,
                       factor=2)
 def request(url, params):
-    bad_page = "page does not have a valid value"
     headers = {"Authorization": "Bearer {}".format(CONFIG["access_token"])}
     if 'user_agent' in CONFIG:
         headers['User-Agent'] = CONFIG['user_agent']
@@ -78,28 +82,30 @@ def request(url, params):
 
     return resp
 
-#ENDPOINT_BOOKMARK_KEYS = {"responses": "created_at",
-#                          "declines": "created_at",
-#                          "end_users": "updated_at"}
-
-
-# TODO: this doesn't work for Responses and Declines, we might be able to get them all if we switch the window to
-# shift by created_at for them, and emit based on > updated_at bookmark, with a full request sync every time (without being able to
-# request by updated at, this is the only way it seems)
 def gen_request(endpoint):
     url = BASE_URL + endpoint
+
+    supports_updated = endpoint == "end_users"
+    query_key_gt = "updated[gt]" if supports_updated else "created[gt]"
+    query_key_lt = "updated[lt]" if supports_updated else "created[lt]"
+    sort_key = "updated_at" if supports_updated else "created_at"
+
+    sliding_window = SLIDING_WINDOW if endpoint == "end_users" else SLIDING_WINDOW * 30
+
     params = {
         "per_page": PER_PAGE,
         "sort_order": "asc",
-        "updated[gt]": get_start_ts(endpoint),
-        "updated[lt]": get_start_ts(endpoint) + SLIDING_WINDOW,
+        query_key_gt: get_start_ts(endpoint),
+        query_key_lt: get_start_ts(endpoint) + sliding_window,
         "page": 1,
-        "sort_key": "updated_at"
+        "sort_key": sort_key
     }
 
-    last_date = params["updated[gt]"]
+    last_date = params[query_key_gt]
     last_round = False
-    sync_start = datetime.datetime.utcnow().timestamp()
+    sync_start = datetime.datetime.utcnow()
+
+    last_bookmark = get_update_start_ts(endpoint)
 
     while True:
         resp = request(url, params)
@@ -107,32 +113,35 @@ def gen_request(endpoint):
             break
 
         data = resp.json()
-
         for row in data:
-            last_date = int(datetime.datetime.strptime(row["updated_at"], DATETIME_FMT).astimezone(timezone.utc).timestamp())
-            yield row
-            
+            last_date = int(datetime.datetime.strptime(row[sort_key], DATETIME_FMT).astimezone(timezone.utc).timestamp())
+            last_updated_at = int(datetime.datetime.strptime(row["updated_at"], DATETIME_FMT).astimezone(timezone.utc).timestamp())
+            if last_updated_at > last_bookmark:
+                yield row
+
         if params["page"] >= 30 and len(data) == PER_PAGE:
             params["page"] = 1
-            params["updated[gt]"] = last_date
+            params[query_key_gt] = last_date
         elif len(data) == 0:
             params["page"] = 1
-            params["updated[gt]"] = params["updated[lt]"] - 1 # [lt] and [gt] are not inclusive
-            params["updated[lt]"] = params["updated[gt]"] + SLIDING_WINDOW
+            params[query_key_gt] = params[query_key_lt] - 1 # [lt] and [gt] are not inclusive
+            params[query_key_lt] = params[query_key_gt] + sliding_window
         else:
             params["page"] += 1
 
         if last_round and len(data) == 0:
             break
 
-        if params["updated[lt]"] > sync_start:
+        if params[query_key_lt] > sync_start.timestamp():
             last_round = True
+
+    STATE[endpoint] = utils.strftime(sync_start)
 
 def transform_datetimes(row):
     for key in ["created_at", "updated_at", "last_surveyed"]:
         if key in row and row[key] not in [None, ""]:
             dt = datetime.datetime.strptime(row[key], DATETIME_FMT)
-            row[key] = utils.strftime(dt)
+            row[key] = utils.strftime(dt.astimezone(timezone.utc))
 
 
 def sync_entity(entity):
@@ -145,7 +154,10 @@ def sync_entity(entity):
         transform_datetimes(row)
         singer.write_record(entity, row)
         utils.update_state(STATE, entity, row["updated_at"])
-        if i % 50 == 49:
+
+        # "end_users" is the only one that can be queried by updated_at
+        # As such, the other streams require a full sync before writing bookmarks.
+        if i % 50 == 49 and entity == "end_users":
             singer.write_state(STATE)
 
     singer.write_state(STATE)
@@ -168,10 +180,6 @@ def main():
 
     if args.state:
         STATE.update(args.state)
-
-    for k, v in STATE.items():
-        if isinstance(v, int):
-            STATE[k] = utils.strptime(v)
 
     do_sync()
 
