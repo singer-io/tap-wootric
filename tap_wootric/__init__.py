@@ -75,10 +75,9 @@ def request(url, params):
     req = requests.Request("GET", url, params=params, headers=headers).prepare()
     logger.info("GET {}".format(req.url))
     resp = session.send(req)
-    if resp.status_code == 400:
-        err = resp.json()
+    if resp.status_code >= 400:
         logger.error("GET {}: [{} - {}]".format(req.url, resp.status_code, resp.content))
-        resp.raise_for_status()
+    resp.raise_for_status()
 
     return resp
 
