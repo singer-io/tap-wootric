@@ -97,6 +97,9 @@ def gen_request(endpoint):
         query_key_gt: get_start_ts(endpoint),
         query_key_lt: get_start_ts(endpoint) + sliding_window,
         "page": 1,
+        # sort_key is not a documented feature in the Wootric API. The CTO
+        # told us about it after we reached out about some issues we were
+        # seeing.
         "sort_key": sort_key
     }
 
@@ -118,6 +121,8 @@ def gen_request(endpoint):
             if last_updated_at > last_bookmark:
                 yield row
 
+        # The Wootric API won't let us fetch more than 30 pages. We'll get
+        # an error if we do.
         if params["page"] >= 30:
             params["page"] = 1
             if len(data) == PER_PAGE:
