@@ -91,3 +91,8 @@ ENV/
 # Custom stuff
 env.sh
 config.json
+logging.conf
+
+# idea
+*.iml
+.idea/

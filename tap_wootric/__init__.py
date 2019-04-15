@@ -1,21 +1,17 @@
 #!/usr/bin/env python3
 
 import datetime
-from datetime import timezone
-
 import os
-import sys
+from datetime import timezone
 
 import backoff
 import requests
 import singer
-
 from singer import utils
-
 
 BASE_URL = "https://api.wootric.com/v1/"
 PER_PAGE = 50
-SLIDING_WINDOW = 86400 # 86400 = 1 day in seconds
+SLIDING_WINDOW = 86400  # 86400 = 1 day in seconds
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S %z"
 
 CONFIG = {}
@@ -24,11 +20,14 @@ STATE = {}
 logger = singer.get_logger()
 session = requests.Session()
 
+
 def get_abs_path(path):
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), path)
 
+
 def load_schema(entity):
     return utils.load_json(get_abs_path("schemas/{}.json".format(entity)))
+
 
 def get_start(key):
     if key not in STATE or key != "end_users":
@@ -40,11 +39,13 @@ def get_start(key):
 def get_start_ts(key):
     return int(utils.strptime(get_start(key)).timestamp())
 
+
 def get_update_start_ts(key):
     if key not in STATE:
         STATE[key] = CONFIG['start_date']
 
     return int(utils.strptime(STATE[key]).timestamp())
+
 
 def get_url(endpoint):
     return BASE_URL + endpoint
@@ -62,10 +63,14 @@ def get_access_token():
     CONFIG["access_token"] = data["access_token"]
 
 
+def giveup_condition(e):
+    return e.response is not None and 400 <= e.response.status_code < 500 and not e.response.status_code == 429
+
+
 @backoff.on_exception(backoff.expo,
-                      (requests.exceptions.RequestException),
-                      max_tries=5,
-                      giveup=lambda e: e.response is not None and 400 <= e.response.status_code < 500,
+                      requests.exceptions.RequestException,
+                      max_tries=7,
+                      giveup=giveup_condition,
                       factor=2)
 def request(url, params):
     headers = {"Authorization": "Bearer {}".format(CONFIG["access_token"])}
@@ -79,7 +84,11 @@ def request(url, params):
         logger.error("GET {}: [{} - {}]".format(req.url, resp.status_code, resp.content))
     resp.raise_for_status()
 
+    logger.info("X-Rate-Limit-Limit: {}".format(resp.headers.get("X-Rate-Limit-Limit")))
+    logger.info("X-Rate-Limit-Remaining: {}".format(resp.headers.get("X-Rate-Limit-Remaining")))
+
     return resp
+
 
 def gen_request(endpoint):
     url = BASE_URL + endpoint
@@ -116,8 +125,10 @@ def gen_request(endpoint):
 
         data = resp.json()
         for row in data:
-            last_date = int(datetime.datetime.strptime(row[sort_key], DATETIME_FMT).astimezone(timezone.utc).timestamp())
-            last_updated_at = int(datetime.datetime.strptime(row["updated_at"], DATETIME_FMT).astimezone(timezone.utc).timestamp())
+            last_date = int(
+                datetime.datetime.strptime(row[sort_key], DATETIME_FMT).astimezone(timezone.utc).timestamp())
+            last_updated_at = int(
+                datetime.datetime.strptime(row["updated_at"], DATETIME_FMT).astimezone(timezone.utc).timestamp())
             if last_updated_at > last_bookmark:
                 yield row
 
@@ -128,11 +139,11 @@ def gen_request(endpoint):
             if len(data) == PER_PAGE:
                 params[query_key_gt] = last_date
             else:
-                params[query_key_gt] = params[query_key_lt] - 1 # [lt] and [gt] are not inclusive
+                params[query_key_gt] = params[query_key_lt] - 1  # [lt] and [gt] are not inclusive
                 params[query_key_lt] = params[query_key_gt] + sliding_window
         elif len(data) == 0:
             params["page"] = 1
-            params[query_key_gt] = params[query_key_lt] - 1 # [lt] and [gt] are not inclusive
+            params[query_key_gt] = params[query_key_lt] - 1  # [lt] and [gt] are not inclusive
             params[query_key_lt] = params[query_key_gt] + sliding_window
         else:
             params["page"] += 1
@@ -144,6 +155,7 @@ def gen_request(endpoint):
             last_round = True
 
     STATE[endpoint] = utils.strftime(sync_start)
+
 
 def transform_datetimes(row):
     for key in ["created_at", "updated_at", "last_surveyed"]:
@@ -191,12 +203,14 @@ def main_impl():
 
     do_sync()
 
+
 def main():
     try:
         main_impl()
     except Exception as exc:
-        LOGGER.critical(exc)
+        logger.critical(exc)
         raise exc
+
 
 if __name__ == '__main__':
     main()
