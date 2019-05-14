@@ -70,6 +70,7 @@ def giveup_condition(e):
 @backoff.on_exception(backoff.expo,
                       requests.exceptions.RequestException,
                       max_tries=7,
+                      jitter=None,
                       giveup=giveup_condition,
                       factor=2)
 def request(url, params):
