@@ -37,14 +37,14 @@ def get_start(key):
 
 
 def get_start_ts(key):
-    return int(utils.strptime(get_start(key)).timestamp())
+    return int(utils.strptime_to_utc(get_start(key)).timestamp())
 
 
 def get_update_start_ts(key):
     if key not in STATE:
         STATE[key] = CONFIG['start_date']
 
-    return int(utils.strptime(STATE[key]).timestamp())
+    return int(utils.strptime_to_utc(STATE[key]).timestamp())
 
 
 def get_url(endpoint):
@@ -52,6 +52,7 @@ def get_url(endpoint):
 
 
 def get_access_token():
+    logger.info("Authenticating")
     data = {
         "grant_type": "client_credentials",
         "client_id": CONFIG["client_id"],
@@ -60,7 +61,11 @@ def get_access_token():
     resp = requests.post("https://api.wootric.com/oauth/token", data=data)
     resp.raise_for_status()
     data = resp.json()
+
     CONFIG["access_token"] = data["access_token"]
+    # refresh_after = int(data["expires_in"]) - 60  # refresh in one minute in advance
+    refresh_after = 120
+    CONFIG["token_expires_at"] = datetime.datetime.utcnow() + datetime.timedelta(seconds=refresh_after)
 
 
 def giveup_condition(e):
@@ -74,6 +79,11 @@ def giveup_condition(e):
                       giveup=giveup_condition,
                       factor=2)
 def request(url, params):
+    # refresh token if needed
+    if datetime.datetime.utcnow() >= CONFIG["token_expires_at"]:
+        logger.info("Token expired, refreshing")
+        get_access_token()
+
     headers = {"Authorization": "Bearer {}".format(CONFIG["access_token"])}
     if 'user_agent' in CONFIG:
         headers['User-Agent'] = CONFIG['user_agent']
@@ -185,7 +195,6 @@ def sync_entity(entity):
 
 
 def do_sync():
-    logger.info("Authenticating")
     get_access_token()
 
     sync_entity("responses")
