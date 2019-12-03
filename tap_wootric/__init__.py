@@ -63,8 +63,7 @@ def get_access_token():
     data = resp.json()
 
     CONFIG["access_token"] = data["access_token"]
-    # refresh_after = int(data["expires_in"]) - 60  # refresh in one minute in advance
-    refresh_after = 120
+    refresh_after = int(data["expires_in"]) - 60  # refresh in one minute in advance
     CONFIG["token_expires_at"] = datetime.datetime.utcnow() + datetime.timedelta(seconds=refresh_after)
 
 
