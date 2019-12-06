@@ -124,7 +124,7 @@ def gen_request(endpoint):
 
     last_date = params[query_key_gt]
     last_round = False
-    sync_start = datetime.datetime.utcnow()
+    sync_start = datetime.datetime.now(timezone.utc)
 
     last_bookmark = get_update_start_ts(endpoint)
 
