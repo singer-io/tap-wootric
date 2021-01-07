@@ -11,7 +11,8 @@ from singer import utils
 
 BASE_URL = "https://api.wootric.com/v1/"
 PER_PAGE = 50
-SLIDING_WINDOW = 86400  # 86400 = 1 day in seconds
+SLIDING_WINDOW_SECONDS = 86400  # 86400 = 1 day in seconds
+SLIDING_WINDOW_MULTIPLIER = 30
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S %z"
 
 CONFIG = {}
@@ -20,6 +21,22 @@ STATE = {}
 logger = singer.get_logger()
 session = requests.Session()
 
+def get_sliding_window_seconds() -> int:
+    '''Find the sliding window value in config or use default
+
+    Returns:
+        int: Value in seconds
+    '''
+    return int(CONFIG.get('sliding_window_seconds', SLIDING_WINDOW_SECONDS))
+
+def get_sliding_window_multiplier() -> int:
+    '''Find the sliding window multipiler value in config or use default
+
+    Returns:
+        int: Default 30 value which matches with the 1 day in seconds to
+            make a 30 day sliding window
+    '''
+    return int(CONFIG.get('sliding_window_multiplier', SLIDING_WINDOW_MULTIPLIER))
 
 def get_abs_path(path):
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), path)
@@ -108,7 +125,14 @@ def gen_request(endpoint):
     query_key_lt = "updated[lt]" if supports_updated else "created[lt]"
     sort_key = "updated_at" if supports_updated else "created_at"
 
-    sliding_window = SLIDING_WINDOW if endpoint == "end_users" else SLIDING_WINDOW * 30
+    # get sliding window
+    if endpoint == "end_users":
+        # end users typically has way more records than other tables, so
+        #   we don't want to add a multiplier to make the window larger
+        sliding_window = get_sliding_window_seconds()
+    else:
+        sliding_window = get_sliding_window_seconds() * get_sliding_window_multiplier()
+    
 
     params = {
         "per_page": PER_PAGE,
@@ -204,7 +228,12 @@ def do_sync():
 
 
 def main_impl():
-    args = utils.parse_args(["client_id", "client_secret", "start_date"])
+    args = utils.parse_args([
+        "client_id", 
+        "client_secret", 
+        "start_date", 
+        "sliding_window_seconds", 
+        "sliding_window_multiplier"])
     CONFIG.update(args.config)
 
     if args.state:
