@@ -23,34 +23,54 @@ records that have been previously updated, conduct a full replication.
 
 ## Install
 
-Clone this repository, and then:
+1. Clone this repository
+
+2. Make sure you have set `PYTHONPATH` correctly for where python will install site-packages. e.g if site-packages is `/usr/local/lib/pythonX.Y/site-packages`
+
+3. at the root directory of the project, run
+```bash
+python setup.py install
+```
+4. Once the installation succeeds, you will see the installed location in the stdout. You will need to export the path to be able to use it.
 
 ```bash
-› python setup.py install
+# add this line to your .bashrc or .zshrc file depending on what shell you are using
+export PATH="/your/installed/path/bin:$PATH"
+# for example 
+# export PATH="/opt/homebrew/opt/python@3.9/Frameworks/Python.framework/Versions/3.9/bin/:$PATH"
+# then you need to source it
+source ~/.zshrc # or source .bashrc
 ```
+
 
 ## Run
 
 #### Run the application
 
-```bash
+1. You will need to create two files in the project root directory to run the application: `config.json` and `state.json` 
 
-tap-wootric -c config.json -s state.json
-
-```
-
-Where `config.json` contains the following, retrieved from the API
-section of your Wootric account settings page:
+- `config.json` contains the following, retrieved from the API section of your Wootric account settings page and a `start_date` field which specifies which date you want to start to retrieve the data.
 
 ```json
 {
+  "start_date": "2022-07-10",
   "client_id": "a64characterstring...",
   "client_secret": "another64characterstring..."
 }
 ```
 
-and `state.json` is a file containing only the value of the last state
-message.
+- `state.json` is a file containing only the value of the last state message. you can leave as empty if you don't know the last state message.
+```json
+// make sure you have the curly braces otherwise it would fail
+{}
+```
+
+2. Then you can run the following command at the root directory of the project.
+```bash
+
+tap-wootric -c config.json -s state.json
+
+```
 
 ---
 
